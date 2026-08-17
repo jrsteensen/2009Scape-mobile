@@ -45,6 +45,7 @@ import net.kdt.pojavlaunch.extra.ExtraCore;
 import net.kdt.pojavlaunch.multirt.MultiRTUtils;
 import net.kdt.pojavlaunch.multirt.Runtime;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
+import net.kdt.pojavlaunch.tasks.AsyncAssetManager;
 import net.kdt.pojavlaunch.utils.DownloadUtils;
 import net.kdt.pojavlaunch.utils.JREUtils;
 
@@ -151,6 +152,7 @@ public final class Tools {
 
 
     public static void launchGLJRE(final Activity activity) throws Throwable {
+        AsyncAssetManager.awaitRuntime();
 
         Runtime runtime = MultiRTUtils.forceReread("Internal");
         File gamedir = new File(Tools.DIR_DATA);

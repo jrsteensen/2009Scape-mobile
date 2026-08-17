@@ -19,10 +19,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 public class AsyncAssetManager {
 
     private static final String PLUGIN_PATH = "plugins";
+
+    private static volatile Future<?> sRuntimeInstallTask;
 
     private AsyncAssetManager(){}
 
@@ -44,20 +48,43 @@ public class AsyncAssetManager {
         if(rt_version == null) return;
         if(rt_version.equals(current_rt_version)) return;
 
-        // Install the runtime in an async manner, hope for the best
+        // Keep the install asynchronous, but retain the task so game launch can wait for it.
         String finalRt_version = rt_version;
-        sExecutorService.execute(() -> {
-
+        sRuntimeInstallTask = sExecutorService.submit(() -> {
             try {
                 MultiRTUtils.installRuntimeNamedBinpack(
                         am.open("components/jre/universal.tar.xz"),
                         am.open("components/jre/bin-" + archAsString(Tools.DEVICE_ARCHITECTURE) + ".tar.xz"),
                         "Internal", finalRt_version);
                 MultiRTUtils.postPrepare("Internal");
-            }catch (IOException e) {
+            } catch (IOException e) {
                 Log.e("JREAuto", "Internal JRE unpack failed", e);
+                throw new IllegalStateException("Internal JRE unpack failed", e);
             }
         });
+    }
+
+    /**
+     * Wait for the bundled runtime to finish installing before Java tries to load its
+     * native libraries. On a fresh install, launching while the binpack is still being
+     * extracted can expose libfontmanager.so before libfreetype.so exists.
+     */
+    public static void awaitRuntime() throws IOException {
+        Future<?> runtimeInstallTask = sRuntimeInstallTask;
+        if (runtimeInstallTask == null) return;
+
+        try {
+            runtimeInstallTask.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while installing the internal Java runtime", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            throw new IOException(
+                    "Failed to install the internal Java runtime",
+                    cause == null ? e : cause
+            );
+        }
     }
 
     /** Unpack single files, with no regard to version tracking */
