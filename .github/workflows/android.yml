@@ -1,112 +1,133 @@
-name: Android CI
+name: Build Android APK
 
 on:
   pull_request:
-    branches-ignore:
-      - 'l10n_v3_openjdk2'
-    types: [ opened, reopened ]
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches-ignore:
-      - 'l10n_v3_openjdk2'
+    branches:
+      - master
+      - 'agent/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  build-apk:
+    name: Build and verify APK
     runs-on: ubuntu-22.04
-    env:
-      GPLAY_KEYSTORE_PASSWORD: ${{ secrets.GPLAY_KEYSTORE_PASSWORD }}
+    timeout-minutes: 45
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up JDK 8
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '8'
 
-      - name: Get JRE 8
-        uses: dawidd6/action-download-artifact@v2
+      - name: Download Android JRE 8
+        uses: dawidd6/action-download-artifact@v23
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: build.yml
-          path: app_pojavlauncher/src/main/assets/components/jre
           workflow_conclusion: success
           repo: PojavLauncherTeam/android-openjdk-build-multiarch
           branch: buildjre8
           name: jre8-pojav
+          path: app_pojavlauncher/src/main/assets/components/jre
 
-      - name: Get JRE17
-        uses: dawidd6/action-download-artifact@v2
+      - name: Download Android JRE 17
+        uses: dawidd6/action-download-artifact@v23
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: build.yml
-          path: app_pojavlauncher/src/main/assets/components/jre-new
           workflow_conclusion: success
           repo: PojavLauncherTeam/android-openjdk-build-multiarch
           branch: buildjre17
           name: jre17-pojav
+          path: app_pojavlauncher/src/main/assets/components/jre-new
 
-      - uses: gradle/gradle-build-action@v2
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 7.6.1
+          gradle-version: '7.6.1'
 
-      - name: Build JRE JAR files
+      - name: Build JRE support libraries
         run: |
           ./scripts/languagelist_updater.sh
-
-          mkdir out
-          # Build JRE JAR files (security manager, etc...)
           gradle :jre_lwjgl3glfw:build --no-daemon
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Build Google Play .aab
-        if: github.repository_owner == 'PojavLauncherTeam' && github.ref_name == 'v3_openjdk'
-        run: |
-          gradle :app_pojavlauncher:bundleGplay
-          mv app_pojavlauncher/build/outputs/bundle/gplay/app_pojavlauncher-gplay.aab out/app-gplay.aab
+      - name: Build full Android APK
+        run: gradle :app_pojavlauncher:assembleDebug --no-daemon
 
-      - name: Build Debug .apk
+      - name: Stage APK
         run: |
-          # Build the launcher
-          gradle :app_pojavlauncher:assembleDebug
-          mv app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk out/app-debug.apk
+          mkdir -p out
+          cp app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk \
+            out/6Paws-2009scape-Android.apk
+          sha256sum out/6Paws-2009scape-Android.apk \
+            > out/6Paws-2009scape-Android.apk.sha256
 
-      - name: Build APK without runtime
+      - name: Verify APK and family server configuration
         run: |
-          rm -r app_pojavlauncher/src/main/assets/components/jre
-          rm -r app_pojavlauncher/src/main/assets/components/jre-new
-          gradle assembleDebug
-          mv app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk out/app-debug-noruntime.apk
-      - name: Gen md5sums
-        run: |
-          md5sum out/app-debug.apk > out/app-debug.md5
-          md5sum out/app-debug-noruntime.apk > out/app-debug-noruntime.md5
-          
-      - name: Upload APK
-        uses: actions/upload-artifact@v3
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose out/6Paws-2009scape-Android.apk
+          unzip -p out/6Paws-2009scape-Android.apk assets/config.json > /tmp/client-config.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/client-config.json', encoding='utf-8') as handle:
+              config = json.load(handle)
+          assert config['ip_management'] == 'rs.6paws.com'
+          assert config['ip_address'] == 'rs.6paws.com'
+          assert config['world'] == 1
+          assert config['server_port'] == 43594
+          PY
+
+      - name: Upload PR test APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: out/app-debug.*
+          name: 6Paws-2009scape-PR-${{ github.event.pull_request.number }}
+          path: |
+            out/6Paws-2009scape-Android.apk
+            out/6Paws-2009scape-Android.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Upload onto the Google Play testing track
-        continue-on-error: true
-        if: github.repository_owner == 'PojavLauncherTeam' && github.ref_name == 'v3_openjdk'
-        uses: r0adkll/upload-google-play@v1.1.1
+      - name: Upload master APK
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v4
         with:
-          serviceAccountJsonPlainText: ${{ secrets.GPLAY_SERVICE_JSON }}
-          packageName: net.kdt.pojavlaunch
-          releaseFiles: out/app-gplay.aab
-          track: internal
-          inAppUpdatePriority: 5
-          changesNotSentForReview: true
+          name: 6Paws-2009scape-Android
+          path: |
+            out/6Paws-2009scape-Android.apk
+            out/6Paws-2009scape-Android.apk.sha256
+          if-no-files-found: error
+          retention-days: 90
 
-      - name: Upload APK (without runtime)
-        uses: actions/upload-artifact@v3
+      - name: Upload branch test APK
+        if: github.event_name == 'push' && github.ref != 'refs/heads/master'
+        uses: actions/upload-artifact@v4
         with:
-          name: app-debug-noruntime
-          path: out/app-debug-noruntime.*
-
+          name: 6Paws-2009scape-branch-${{ github.run_number }}
+          path: |
+            out/6Paws-2009scape-Android.apk
+            out/6Paws-2009scape-Android.apk.sha256
+          if-no-files-found: error
+          retention-days: 7
