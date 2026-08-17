@@ -53,6 +53,9 @@ jobs:
             test -s "$RUNTIME_DIR/$file"
           done
 
+      - name: Stage Java linker dependencies
+        run: ./scripts/stage_runtime_linker_libs.sh
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -85,11 +88,20 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose out/6Paws-2009scape-Android.apk
-          unzip -p out/6Paws-2009scape-Android.apk assets/config.json > /tmp/client-config.json
           python3 - <<'PY'
           import json
-          with open('/tmp/client-config.json', encoding='utf-8') as handle:
-              config = json.load(handle)
+          from zipfile import ZipFile
+
+          apk_path = 'out/6Paws-2009scape-Android.apk'
+          native_libraries = [
+              f'lib/{abi}/libfreetype.so'
+              for abi in ('armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64')
+          ]
+          with ZipFile(apk_path) as apk:
+              for path in native_libraries:
+                  assert apk.getinfo(path).file_size > 0, f'Missing native dependency: {path}'
+              with apk.open('assets/config.json') as handle:
+                  config = json.load(handle)
           assert config['ip_management'] == 'rs.6paws.com'
           assert config['ip_address'] == 'rs.6paws.com'
           assert config['world'] == 1

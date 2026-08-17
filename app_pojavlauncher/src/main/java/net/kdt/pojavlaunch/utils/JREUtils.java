@@ -86,7 +86,10 @@ public class JREUtils {
         dlopen(findInLdLibPath("libnio.so"));
         dlopen(findInLdLibPath("libawt.so"));
         dlopen(findInLdLibPath("libawt_headless.so"));
-        dlopen(findInLdLibPath("libfreetype.so"));
+        if (!dlopen(NATIVE_LIB_DIR + "/libfreetype.so")) {
+            Log.w("DynamicLoader", "Packaged FreeType unavailable, falling back to the runtime copy");
+            dlopen(findInLdLibPath("libfreetype.so"));
+        }
         dlopen(findInLdLibPath("libfontmanager.so"));
         for(File f : locateLibs(new File(jreHome, Tools.DIRNAME_HOME_JRE))) {
             dlopen(f.getAbsolutePath());
