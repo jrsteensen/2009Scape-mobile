@@ -93,6 +93,11 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose out/6Paws-2009scape-Android.apk
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          test -n "$AAPT"
+          APK_BADGING="$("$AAPT" dump badging out/6Paws-2009scape-Android.apk)"
+          grep -Fq "application-label:'6Paws 2009scape'" <<< "$APK_BADGING"
+          grep -Eq "launchable-activity:.*label='6Paws 2009scape'" <<< "$APK_BADGING"
           python3 - <<'PY'
           import json
           from zipfile import ZipFile
@@ -158,7 +163,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           release_tag="android-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
-          release_title="6Paws 2009Scape Android build ${GITHUB_RUN_NUMBER}"
+          release_title="6Paws 2009scape Android build ${GITHUB_RUN_NUMBER}"
 
           if gh release view "$release_tag" >/dev/null 2>&1; then
             gh release upload "$release_tag" \
