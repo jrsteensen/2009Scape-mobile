@@ -53,8 +53,12 @@ jobs:
             test -s "$RUNTIME_DIR/$file"
           done
 
-      - name: Stage Java linker dependencies
-        run: ./scripts/stage_runtime_linker_libs.sh
+      - name: Verify packaged Java linker dependencies
+        run: |
+          test "$(git hash-object app_pojavlauncher/src/main/jniLibs/armeabi-v7a/libfreetype.so)" = "861d8eed2d7b1631344dcf4bc5684fe10e8bc614"
+          test "$(git hash-object app_pojavlauncher/src/main/jniLibs/arm64-v8a/libfreetype.so)" = "4b463d9f4e1604d2f8207ca13f2736f0afdaa379"
+          test "$(git hash-object app_pojavlauncher/src/main/jniLibs/x86/libfreetype.so)" = "621719e025b05cd59109f73fe445554096a91636"
+          test "$(git hash-object app_pojavlauncher/src/main/jniLibs/x86_64/libfreetype.so)" = "2360a1d559cbb6c55e68a8772f57fdf820402ee1"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
