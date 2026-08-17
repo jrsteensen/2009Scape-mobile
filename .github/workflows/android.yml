@@ -1,5 +1,7 @@
 name: Build Android APK
 
+# Builds an installable APK for review before changes reach master.
+
 on:
   pull_request:
     branches: [master]
